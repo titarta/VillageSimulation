@@ -6,8 +6,11 @@ using System.Threading.Tasks;
 
 namespace Simulation
 {
+    [Serializable]
     public enum Actions { Plant=0, Harvest=1, Recreative=2, Eat=3};
+    [Serializable]
     public enum Effects { PlantGrow=0, PlantSeed=1, ChangePositionToFarm=2, ChangePositionToWorkshop=3, PlantHarvest=4, FoodConsumption=5, RecreativeFinish=6}
+    [Serializable]
     public enum CropState { None=0, Seed=1, Plant=2}
 
     class NoFarmLandAvailableException : Exception
@@ -88,20 +91,48 @@ namespace Simulation
     
     class Environment
     {
+        //the current state of the farm, each position contains one of the three possible states
         private CropState[] farm;
+        //the current queue of the events to happen in the environment
         private List<EnvironmentStep> stepsQueue;
+        //agent's references
         private Dictionary<int, Agent> agents;
+        private CooperativeAgents coopAgents;
+        //last time each agent was updated (in order to reduce saturation and for metrics)
         private Dictionary<int, double> agentLastUpdateTimeStamp;
+        //wether or not the agents is free and needs to decide an action
         private Dictionary<int, bool> agentsDeciding;
+        //wether or not the agent is dead
+        private Dictionary<int, bool> deadAgents;
+        //the harvest that corresponds to each agent
+        private Dictionary<int, List<int>> ownedHarvest;
+        //the food each agent has reserved
+        private Dictionary<int, int> agentFoodReserved;
+        //the current position of each agent
+        private Dictionary<int, AgentPosition> agentPositions;
+        //the saturation of each agent
+        private Dictionary<int, double> agentSaturation;
+
+        private MetricsLogger metricsLogger;
+
+
         private bool condition;
+
+        private SetupConfig setupVariables;
         private double simulationTime;
         private double timeToGrow = 20;
         private double harvestTime = 0;
         private double plantTime = 0;
-        private int recreativeTime = 10;
+        private double recreativeTime = 10;
 
-        public Environment(int farmSize, int numAgents)
+        private bool cooperativeLearning;
+
+        public Environment(int farmSize, Dictionary<int, Agent> agentsDict, SetupConfig setupVariables, MetricsLogger metricsLogger)
         {
+            cooperativeLearning = false;
+            this.setupVariables = setupVariables;
+            this.metricsLogger = metricsLogger;
+            this.metricsLogger.startSimulationMetrics();
             simulationTime = 0;
             farm = new CropState[farmSize];
             for(int i = 0; i < farmSize; i++)
@@ -110,14 +141,24 @@ namespace Simulation
             }
 
             //create agents
-            agents = new Dictionary<int, Agent>();
+            agents = agentsDict;
+            coopAgents = new EmptyCoopAgents();
             agentsDeciding = new Dictionary<int, bool>();
             agentLastUpdateTimeStamp = new Dictionary<int, double>();
-            for (int i = 0; i < numAgents; i++)
+            deadAgents = new Dictionary<int, bool>();
+            ownedHarvest = new Dictionary<int, List<int>>();
+            agentFoodReserved = new Dictionary<int, int>();
+            agentPositions = new Dictionary<int, AgentPosition>();
+            agentSaturation = new Dictionary<int, double>();
+            for (int i = 0; i < agentsDict.Count; i++)
             {
-                agents.Add(i, new RandomAgent());
                 agentLastUpdateTimeStamp.Add(i, simulationTime);
                 agentsDeciding.Add(i, true);
+                deadAgents.Add(i, false);
+                ownedHarvest.Add(i, new List<int>());
+                agentFoodReserved.Add(i, setupVariables.initialFood);
+                agentPositions.Add(i, AgentPosition.Center);
+                agentSaturation.Add(i, setupVariables.initialSaturation);
             }
             
             condition = true;
@@ -126,14 +167,69 @@ namespace Simulation
             updateEnvironment();
         }
 
+        public Environment(int farmSize, CooperativeAgents coopAgent, SetupConfig setupVariables, MetricsLogger metricsLogger)
+        {
+            cooperativeLearning = true;
+            this.setupVariables = setupVariables;
+            this.metricsLogger = metricsLogger;
+            this.metricsLogger.startSimulationMetrics();
+            simulationTime = 0;
+            farm = new CropState[farmSize];
+            for (int i = 0; i < farmSize; i++)
+            {
+                farm[i] = CropState.None;
+            }
+
+            //create agents
+            coopAgents = coopAgent;
+            agents = new Dictionary<int, Agent>();
+            agentsDeciding = new Dictionary<int, bool>();
+            agentLastUpdateTimeStamp = new Dictionary<int, double>();
+            deadAgents = new Dictionary<int, bool>();
+            ownedHarvest = new Dictionary<int, List<int>>();
+            agentFoodReserved = new Dictionary<int, int>();
+            agentPositions = new Dictionary<int, AgentPosition>();
+            agentSaturation = new Dictionary<int, double>();
+            for (int i = 0; i < coopAgents.getNumberAgents(); i++)
+            {
+                agentLastUpdateTimeStamp.Add(i, simulationTime);
+                agentsDeciding.Add(i, true);
+                deadAgents.Add(i, false);
+                ownedHarvest.Add(i, new List<int>());
+                agentFoodReserved.Add(i, setupVariables.initialFood);
+                agentPositions.Add(i, AgentPosition.Center);
+                agentSaturation.Add(i, setupVariables.initialSaturation);
+            }
+
+            condition = true;
+            stepsQueue = new List<EnvironmentStep>();
+
+            updateEnvironment();
+        }
         private void updateEnvironment()
         {
             while(condition)
             {
-                bool agentsDecided = true; ;
-                foreach(bool d in agentsDeciding.Values)
+                //check if agents are dead
+                bool allAgentsDead = true;
+                foreach (bool dead in deadAgents.Values)
                 {
-                    if(d)
+                    if (!dead)
+                    {
+                        allAgentsDead = false;
+                    }
+                }
+                if (allAgentsDead || simulationTime >= 100000)
+                {
+                    condition = false;
+                    continue;
+                }
+
+                //check if agents need to decide
+                bool agentsDecided = true;
+                for(int i = 0; i < agentsDeciding.Count; i++)
+                {
+                    if (agentsDeciding[i] && !deadAgents[i])
                     {
                         agentsDecided = false;
                     }
@@ -144,47 +240,80 @@ namespace Simulation
                     updateStep();
                 } else
                 {
-                    for(int agentID = 0; agentID < agents.Count; agentID++)
+                    for(int agentID = 0; agentID < Math.Max(agents.Count, coopAgents.getNumberAgents()); agentID++)
                     {
+                        if(deadAgents[agentID])
+                        {
+                            continue;
+                        }
                         if(agentsDeciding[agentID])
                         {
-                            Actions actionPerformed = agents[agentID].decide(); //get action made by agent (will get a state here)
 
-                            publishAction(actionPerformed, agentID);
+                            Actions actionPerformed;
+                            
+                            if(cooperativeLearning)
+                            {
+                                actionPerformed = coopAgents.decide(agentID, getEnvState(agentID));
+                            } else
+                            {
+                                actionPerformed = agents[agentID].decide(getEnvState(agentID)); //get action made by agent (will get a state here)
+                            }
+                            
 
-                            agentsDeciding[agentID] = false;
+                            if(publishAction(actionPerformed, agentID))
+                            {
+                                agentsDeciding[agentID] = false;
+                                continue;
+                            } else
+                            {
+                                agentID--;
+                                continue;
+                            }
+
+                            
                             
                         }
                     }
                 }
 
             }
+            metricsLogger.calculateSimulationMetrics();
         }
     
-    
-        private void publishAction(Actions action, int agentID)
+        //retorna true se a ação poder ser executado, false otherwise
+        private bool publishAction(Actions action, int agentID)
         {
-            AgentPosition agentPos = agents[agentID].GetAgentPosition();
 
-            AgentPosition actionPos = getActionPosition(action, agentPos);
+            AgentPosition actionPos = getActionPosition(action, agentPositions[agentID]);
 
             //List<Effect> effects = getEffectsFromActions(action, agentID);
 
-            double movementTime = getTimeFromPosToPos(agentPos, actionPos);
+            double movementTime = getTimeFromPosToPos(agentPositions[agentID], actionPos);
 
             //create envSteps from effects
             int plantPosition;
             switch (action)
             {
                 case Actions.Eat:
-                    stepsQueue.Add(new EnvironmentStep(simulationTime, agentID, Effects.FoodConsumption));
+                    if (agentFoodReserved[agentID] > 0)
+                    {
+                        stepsQueue.Add(new EnvironmentStep(simulationTime, agentID, Effects.FoodConsumption));
+                    } else
+                    {
+                        stepsQueue.Sort();
+
+                        updateAgentReward(agentID, setupVariables.rewardImpossibleAction);
+                        return false;
+                    }
+                        
                     break;
                 case Actions.Harvest:
                     plantPosition = getPlantToHarvest(agentID);
                     if (plantPosition == -1)
                     {
                         stepsQueue.Sort();
-                        return;
+                        updateAgentReward(agentID, setupVariables.rewardImpossibleAction);
+                        return false;
                     }
                     stepsQueue.Add(new EnvironmentStep(simulationTime + movementTime, agentID, Effects.ChangePositionToFarm));
                     stepsQueue.Add(new EnvironmentStep(simulationTime + movementTime + harvestTime, agentID, Effects.PlantHarvest, plantPosition));
@@ -194,7 +323,8 @@ namespace Simulation
                     if (plantPosition == -1)
                     {
                         stepsQueue.Sort();
-                        return;
+                        updateAgentReward(agentID, setupVariables.rewardImpossibleAction);
+                        return false;
                     }
                     stepsQueue.Add(new EnvironmentStep(simulationTime + movementTime, agentID, Effects.ChangePositionToFarm));
                     stepsQueue.Add(new EnvironmentStep(simulationTime + movementTime + plantTime, agentID, Effects.PlantSeed, plantPosition));
@@ -209,8 +339,9 @@ namespace Simulation
 
             }
 
+            metricsLogger.addActionToCounter(agentID, action);
             stepsQueue.Sort();
-
+            return true;
 
 
         }
@@ -238,37 +369,37 @@ namespace Simulation
             {
                 return 0;
             }
-            if(pos1 == AgentPosition.Center)
-            {
-                switch (pos2)
-                {
-                    case AgentPosition.Farm:
-                        return 5;
-                    case AgentPosition.WorkShop:
-                        return 5;
-                }
-            }
-            if(pos1 == AgentPosition.Farm)
-            {
-                switch(pos2)
-                {
-                    case AgentPosition.Center:
-                        return 5;
-                    case AgentPosition.WorkShop:
-                        return 10;
-                }
-            }
-            if(pos1 == AgentPosition.WorkShop)
-            {
-                switch(pos2)
-                {
-                    case AgentPosition.Center:
-                        return 5;
-                    case AgentPosition.Farm:
-                        return 10;
-                }
-            }
-            throw new Exception();
+            return setupVariables.distanceFarmWorkshop;
+            //if(pos1 == AgentPosition.Center)
+            //{
+            //    switch (pos2)
+            //    {
+            //        case AgentPosition.Farm:
+            //            return setupVariables.distanceFarmWorkshop / 2;
+            //        case AgentPosition.WorkShop:
+            //            return setupVariables.distanceFarmWorkshop / 2;
+            //    }
+            //}
+            //if(pos1 == AgentPosition.Farm)
+            //{
+            //    switch(pos2)
+            //    {
+            //        case AgentPosition.Center:
+            //            return setupVariables.distanceFarmWorkshop / 2;
+            //        case AgentPosition.WorkShop:
+            //            return setupVariables.distanceFarmWorkshop;
+            //    }
+            //}
+            //if(pos1 == AgentPosition.WorkShop)
+            //{
+            //    switch(pos2)
+            //    {
+            //        case AgentPosition.Center:
+            //            return setupVariables.distanceFarmWorkshop / 2;
+            //        case AgentPosition.Farm:
+            //            return setupVariables.distanceFarmWorkshop;
+            //    }
+            //}
         }
     
     
@@ -314,9 +445,7 @@ namespace Simulation
 
         private int getPlantToHarvest(int agentID)
         {
-            List<int> possiblePlants = agents[agentID].getOwnedHarvest();
-
-            foreach(int plantID in possiblePlants)
+            foreach(int plantID in ownedHarvest[agentID])
             {
                 if(farm[plantID] == CropState.Plant)
                 {
@@ -339,6 +468,19 @@ namespace Simulation
             return -1;
         }
 
+        private int getNumberOfFreeCrops()
+        {
+            int nCrops = 0;
+            for (int i = 0; i < farm.Length; i++)
+            {
+                if (farm[i] == CropState.None)
+                {
+                    nCrops++;
+                }
+            }
+            return nCrops;
+        }
+
 
 
         private void updateStep()
@@ -353,55 +495,70 @@ namespace Simulation
             }
             EnvironmentStep envStep = stepsQueue.First();
             simulationTime = envStep.getTimeStamp();
-
+            int agentID = envStep.getAgentID();
 
             //update do estado do jogo
-            try
+            if (!updateAgentSaturation(agentID, simulationTime - agentLastUpdateTimeStamp[agentID]))
             {
-                agents[envStep.getAgentID()].loseSaturationByTime(simulationTime - agentLastUpdateTimeStamp[envStep.getAgentID()]);
-            } catch(AgentDiesException e)
-            {
-                Console.WriteLine("Agent should be dead");
+                deadAgents[agentID] = true;
+                updateAgentReward(agentID, setupVariables.rewardDying);
+                if (cooperativeLearning)
+                {
+                    coopAgents.decide(agentID, getEnvState(agentID));
+                }
+                else
+                {
+                    agents[agentID].decide(getEnvState(agentID));
+                }
+                metricsLogger.addAgentDeath(agentID, simulationTime);
+                //delete all agentActions
+                for (int i = 0; i < stepsQueue.Count; i++)
+                {
+                    if (stepsQueue[i].getAgentID() == agentID)
+                    {
+                        stepsQueue.RemoveAt(i);
+                        i--;
+                    }
+                }
+                foreach(int plantID in ownedHarvest[agentID])
+                {
+                    farm[plantID] = CropState.None;
+                }
+                return;
             }
             
-            agentLastUpdateTimeStamp[envStep.getAgentID()] = simulationTime;
+            agentLastUpdateTimeStamp[agentID] = simulationTime;
 
             switch (envStep.getEffect())
             {
                 case Effects.FoodConsumption:
-                    try
-                    {
-                        agents[envStep.getAgentID()].consumeFood();
-                    } catch (NoFoodToEatException e)
-                    {
-                        Console.WriteLine("Agent cannot eat");
-                    }
-                    Console.WriteLine("agent eated");
+                    consumeFood(agentID);
+                        
+                    //Console.WriteLine("agent ate");
                     break;
                 case Effects.ChangePositionToFarm:
-                    agents[envStep.getAgentID()].updatePosition(AgentPosition.Farm);
-                    Console.WriteLine("agent went to farm");
+                    updateAgentPosition(agentID, AgentPosition.Farm);
+                    //Console.WriteLine("agent went to farm");
                     break;
                 case Effects.ChangePositionToWorkshop:
-                    agents[envStep.getAgentID()].updatePosition(AgentPosition.WorkShop);
-                    Console.WriteLine("agent went to workshop");
+                    updateAgentPosition(agentID, AgentPosition.WorkShop);
+                    //Console.WriteLine("agent went to workshop");
                     break;
                 case Effects.PlantGrow:
-                    farm[envStep.getPlantID()] = CropState.Plant;
-                    Console.WriteLine("plant grows");
+                    farm[agentID] = CropState.Plant;
+                    //Console.WriteLine("plant grows");
                     break;
                 case Effects.PlantHarvest:
-                    farm[envStep.getPlantID()] = CropState.None;
-                    agents[envStep.getAgentID()].removePlant(envStep.getPlantID());
-                    agents[envStep.getAgentID()].getFood();
-                    Console.WriteLine("plant is harvested");
+                    harvestAgentCrop(agentID, envStep.getPlantID());
+                    addFoodToAgent(agentID);
+                    //Console.WriteLine("plant is harvested");
                     break;
                 case Effects.RecreativeFinish:
+                    endRecreative(agentID);
                     break;
                 case Effects.PlantSeed:
-                    farm[envStep.getPlantID()] = CropState.Seed;
-                    agents[envStep.getAgentID()].addPlantToHarvest(envStep.getPlantID());
-                    Console.WriteLine("seed is planted");
+                    plantCrop(agentID, envStep.getPlantID());
+                    //Console.WriteLine("seed is planted");
                     break;
                 default:
                     break;
@@ -433,13 +590,109 @@ namespace Simulation
 
         private EnvironmentState getEnvState(int agentID)
         {
-            EnvironmentState state = new EnvironmentState();
-            state.freeCrops = getFreeSpaceInFarm();
+            int freeCrops = getNumberOfFreeCrops();
+            int cropsToCultivate = 0;
+            int cropsGrowing = 0;
+            foreach (int cropID in ownedHarvest[agentID])
+            {
+                if(farm[cropID] == CropState.Plant)
+                {
+                    cropsToCultivate++;
+                } else
+                {
+                    cropsGrowing++;
+                }
+            }
+            int position = (int)agentPositions[agentID]; 
+            double saturation = agentSaturation[agentID]; 
+            double foodReserved = agentFoodReserved[agentID];
 
-
-            return state;
+            return new EnvironmentState(freeCrops, cropsToCultivate, cropsGrowing, position, saturation, foodReserved);
         }
 
+        //make agent consume food, returns true if the agent can eat food and false if otherwise
+        private void consumeFood(int agentID)
+        {
+            if (agentSaturation[agentID] < 0.5)
+            {
+                updateAgentReward(agentID, setupVariables.rewardEating[0]);
+            }
+            else if (agentSaturation[agentID] < 1.5)
+            {
+                updateAgentReward(agentID, setupVariables.rewardEating[1]);
+            }
+            else if (agentSaturation[agentID] < 4)
+            {
+                updateAgentReward(agentID, setupVariables.rewardEating[2]);
+            }
+            else
+            {
+                updateAgentReward(agentID, setupVariables.rewardEating[3]);
+            }
+
+
+
+            agentFoodReserved[agentID]--;
+            agentSaturation[agentID] += setupVariables.saturationRecoveredByFood;
+            metricsLogger.addSaturationToMetrics(agentID, agentSaturation[agentID]);
+            metricsLogger.addFoodInvToMetrics(agentID, agentFoodReserved[agentID]);
+
+        }
+
+        private void updateAgentPosition(int agentID, AgentPosition position)
+        {
+            agentPositions[agentID] = position;
+        }
+
+        private void harvestAgentCrop(int agentID, int plantID)
+        {
+
+            farm[plantID] = CropState.None;
+            ownedHarvest[agentID].Remove(plantID);
+        }
+
+        private void addFoodToAgent(int agentID)
+        {
+            agentFoodReserved[agentID] += setupVariables.foodReceivedByHarvest;
+            updateAgentReward(agentID, setupVariables.rewardHarvest);
+            metricsLogger.addFoodInvToMetrics(agentID, agentFoodReserved[agentID]);
+
+        }
+
+        private void plantCrop(int agentID, int plantID)
+        {
+            farm[plantID] = CropState.Seed;
+            ownedHarvest[agentID].Add(plantID);
+            updateAgentReward(agentID, setupVariables.rewardPlant);
+        }
+
+        private void endRecreative(int agentID)
+        {
+            updateAgentReward(agentID, setupVariables.rewardWorkShop);
+        }
+
+        //updates agent saturation, returns true if the agent is not dead, and false if he is
+        private bool updateAgentSaturation(int agentID, double timePassed)
+        {
+            agentSaturation[agentID] -= timePassed * setupVariables.saturationLostPerTime;
+            if (agentSaturation[agentID] <= 0)
+            {
+                return false;
+            }
+            return true;
+        }
+
+        private void updateAgentReward(int agentID, double reward)
+        {
+            if(cooperativeLearning)
+            {
+                coopAgents.updateReward(agentID, reward);
+            } else
+            {
+                agents[agentID].updateReward(reward);
+            }
+            metricsLogger.addRewardToMetrics(agentID, reward);
+        }
     }
 
     

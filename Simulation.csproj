@@ -46,10 +46,29 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="CooperativeAgents.cs" />
+    <Compile Include="ConvnetSharp\Net.cs" />
+    <Compile Include="ConvnetSharp\Layers\FullyConnectedLayer.cs" />
+    <Compile Include="ConvnetSharp\Gradient.cs" />
+    <Compile Include="ConvnetSharp\Layers\DropoutLayer.cs" />
+    <Compile Include="ConvnetSharp\Layers\ConvLayer.cs" />
+    <Compile Include="ConvnetSharp\Layers\ReLULayer.cs" />
+    <Compile Include="ConvnetSharp\Layers\RegressionLayer.cs" />
+    <Compile Include="ConvnetSharp\Layers\SVMLayer.cs" />
+    <Compile Include="ConvnetSharp\Layers\InputLayer.cs" />
+    <Compile Include="ConvnetSharp\Layers\Layer.cs" />
+    <Compile Include="ConvnetSharp\Layers\LayerDefinition.cs" />
+    <Compile Include="ConvnetSharp\Trainer\Trainer.cs" />
+    <Compile Include="ConvnetSharp\Trainer\Options.cs" />
+    <Compile Include="ConvnetSharp\Trainer\TrainingOptions.cs" />
+    <Compile Include="ConvnetSharp\Util.cs" />
+    <Compile Include="ConvnetSharp\Volume.cs" />
     <Compile Include="Agent.cs" />
+    <Compile Include="Utils.cs" />
     <Compile Include="SimulationWrapper.cs" />
     <Compile Include="MetricsLogger.cs" />
     <Compile Include="Logger.cs" />
+    <Compile Include="LearningUtils.cs" />
     <Compile Include="Environment.cs" />
     <Compile Include="Form1.cs">
       <SubType>Form</SubType>
