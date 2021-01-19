@@ -7,11 +7,18 @@ using System.Threading.Tasks;
 namespace Simulation
 {
     [Serializable]
-    public enum Actions { Plant=0, Harvest=1, Recreative=2, Eat=3};
+    public enum Actions { Plant=0, Harvest=1, Recreative=2, Eat=3, Sleep=4, Work=5};
     [Serializable]
-    public enum Effects { PlantGrow=0, PlantSeed=1, ChangePositionToFarm=2, ChangePositionToWorkshop=3, PlantHarvest=4, FoodConsumption=5, RecreativeFinish=6}
+    public enum Effects
+    {
+        PlantGrow = 0, PlantSeed = 1, ChangePositionToFarm = 2, ChangePositionToWorkshop = 3, PlantHarvest = 4, FoodConsumptionStart = 5, WorkFinish = 6,
+        WorkStart = 7, SleepStart = 8, SleepFinish = 9, PlantStart = 10, PlantFinish = 11, HarvestStart = 12, HarvestFinish = 13, ChangePositionToHouse = 14,
+        FoodConsumptionEnd = 15, FunStart = 16, FunFinish = 17, StartChangePositionToFarm = 18, StartChangePositionToWorkshop = 19, StartChangePositionToHouse = 21
+    }
     [Serializable]
     public enum CropState { None=0, Seed=1, Plant=2}
+    [Serializable]
+    public enum SocialPractices { Sleep=0, EatTime = 1,  EatQuantity = 2 , Schedule = 3, LimitFarm = 4}
 
     class NoFarmLandAvailableException : Exception
     {
@@ -112,27 +119,34 @@ namespace Simulation
         private Dictionary<int, AgentPosition> agentPositions;
         //the saturation of each agent
         private Dictionary<int, double> agentSaturation;
+        //flag to know wether or not the agent is executinga  social practice or not
+        private Dictionary<int, bool> socialPracticesFlag;
 
         private MetricsLogger metricsLogger;
+        private OutputLogger outputLogger;
 
 
         private bool condition;
 
         private SetupConfig setupVariables;
-        private double simulationTime;
-        private double timeToGrow = 20;
-        private double harvestTime = 0;
-        private double plantTime = 0;
-        private double recreativeTime = 10;
+        private double simulationTime; // each hour is 4 time units, making 1 time unit = 15min
+        private double timeToGrow = 2 * 4;
+        private double harvestTime = 4;
+        private double plantTime = 4;
+        private double recreativeTime = 4;
+        private double workTime = 4;
+        private double sleepTime = 4;
+        private double eatTime = 2;
 
         private bool cooperativeLearning;
 
-        public Environment(int farmSize, Dictionary<int, Agent> agentsDict, SetupConfig setupVariables, MetricsLogger metricsLogger)
+        public Environment(int farmSize, Dictionary<int, Agent> agentsDict, SetupConfig setupVariables, MetricsLogger metricsLogger, OutputLogger outputLogger)
         {
             cooperativeLearning = false;
             this.setupVariables = setupVariables;
             this.metricsLogger = metricsLogger;
             this.metricsLogger.startSimulationMetrics();
+            this.outputLogger = outputLogger;
             simulationTime = 0;
             farm = new CropState[farmSize];
             for(int i = 0; i < farmSize; i++)
@@ -150,6 +164,7 @@ namespace Simulation
             agentFoodReserved = new Dictionary<int, int>();
             agentPositions = new Dictionary<int, AgentPosition>();
             agentSaturation = new Dictionary<int, double>();
+            socialPracticesFlag = new Dictionary<int, bool>();
             for (int i = 0; i < agentsDict.Count; i++)
             {
                 agentLastUpdateTimeStamp.Add(i, simulationTime);
@@ -159,20 +174,24 @@ namespace Simulation
                 agentFoodReserved.Add(i, setupVariables.initialFood);
                 agentPositions.Add(i, AgentPosition.Center);
                 agentSaturation.Add(i, setupVariables.initialSaturation);
+                socialPracticesFlag.Add(i, false);
             }
             
             condition = true;
             stepsQueue = new List<EnvironmentStep>();
 
+            
+
             updateEnvironment();
         }
 
-        public Environment(int farmSize, CooperativeAgents coopAgent, SetupConfig setupVariables, MetricsLogger metricsLogger)
+        public Environment(int farmSize, CooperativeAgents coopAgent, SetupConfig setupVariables, MetricsLogger metricsLogger, OutputLogger outputLogger)
         {
             cooperativeLearning = true;
             this.setupVariables = setupVariables;
             this.metricsLogger = metricsLogger;
             this.metricsLogger.startSimulationMetrics();
+            this.outputLogger = outputLogger;
             simulationTime = 0;
             farm = new CropState[farmSize];
             for (int i = 0; i < farmSize; i++)
@@ -190,6 +209,7 @@ namespace Simulation
             agentFoodReserved = new Dictionary<int, int>();
             agentPositions = new Dictionary<int, AgentPosition>();
             agentSaturation = new Dictionary<int, double>();
+            socialPracticesFlag = new Dictionary<int, bool>();
             for (int i = 0; i < coopAgents.getNumberAgents(); i++)
             {
                 agentLastUpdateTimeStamp.Add(i, simulationTime);
@@ -199,6 +219,7 @@ namespace Simulation
                 agentFoodReserved.Add(i, setupVariables.initialFood);
                 agentPositions.Add(i, AgentPosition.Center);
                 agentSaturation.Add(i, setupVariables.initialSaturation);
+                socialPracticesFlag.Add(i, false);
             }
 
             condition = true;
@@ -250,14 +271,23 @@ namespace Simulation
                         {
 
                             Actions actionPerformed;
-                            
-                            if(cooperativeLearning)
+
+                            socialPracticesFlag[agentID] = false;
+                            if (cooperativeLearning)
                             {
                                 actionPerformed = coopAgents.decide(agentID, getEnvState(agentID));
                             } else
                             {
                                 actionPerformed = agents[agentID].decide(getEnvState(agentID)); //get action made by agent (will get a state here)
                             }
+
+                            //social practices constraints
+
+
+                            actionPerformed = socialPractices(agentID, actionPerformed);
+
+
+                            //end social practices constraints
                             
 
                             if(publishAction(actionPerformed, agentID))
@@ -297,7 +327,8 @@ namespace Simulation
                 case Actions.Eat:
                     if (agentFoodReserved[agentID] > 0)
                     {
-                        stepsQueue.Add(new EnvironmentStep(simulationTime, agentID, Effects.FoodConsumption));
+                        stepsQueue.Add(new EnvironmentStep(simulationTime, agentID, Effects.FoodConsumptionStart));
+                        stepsQueue.Add(new EnvironmentStep(simulationTime + eatTime, agentID, Effects.FoodConsumptionEnd));
                     } else
                     {
                         stepsQueue.Sort();
@@ -315,7 +346,10 @@ namespace Simulation
                         updateAgentReward(agentID, setupVariables.rewardImpossibleAction);
                         return false;
                     }
+                    stepsQueue.Add(new EnvironmentStep(simulationTime, agentID, Effects.StartChangePositionToFarm));
                     stepsQueue.Add(new EnvironmentStep(simulationTime + movementTime, agentID, Effects.ChangePositionToFarm));
+                    stepsQueue.Add(new EnvironmentStep(simulationTime + movementTime, agentID, Effects.HarvestStart));
+                    stepsQueue.Add(new EnvironmentStep(simulationTime + movementTime + harvestTime, agentID, Effects.HarvestFinish));
                     stepsQueue.Add(new EnvironmentStep(simulationTime + movementTime + harvestTime, agentID, Effects.PlantHarvest, plantPosition));
                     break;
                 case Actions.Plant:
@@ -326,13 +360,31 @@ namespace Simulation
                         updateAgentReward(agentID, setupVariables.rewardImpossibleAction);
                         return false;
                     }
+                    ownedHarvest[agentID].Add(plantPosition);
+                    stepsQueue.Add(new EnvironmentStep(simulationTime, agentID, Effects.StartChangePositionToFarm));
                     stepsQueue.Add(new EnvironmentStep(simulationTime + movementTime, agentID, Effects.ChangePositionToFarm));
+                    stepsQueue.Add(new EnvironmentStep(simulationTime + movementTime, agentID, Effects.PlantStart, plantPosition));
+                    stepsQueue.Add(new EnvironmentStep(simulationTime + movementTime + plantTime, agentID, Effects.PlantFinish, plantPosition));
                     stepsQueue.Add(new EnvironmentStep(simulationTime + movementTime + plantTime, agentID, Effects.PlantSeed, plantPosition));
                     stepsQueue.Add(new EnvironmentStep(simulationTime + movementTime + plantTime + timeToGrow, agentID, Effects.PlantGrow, plantPosition));
                     break;
                 case Actions.Recreative:
+                    stepsQueue.Add(new EnvironmentStep(simulationTime, agentID, Effects.StartChangePositionToHouse));
+                    stepsQueue.Add(new EnvironmentStep(simulationTime + movementTime, agentID, Effects.ChangePositionToHouse));
+                    stepsQueue.Add(new EnvironmentStep(simulationTime + movementTime, agentID, Effects.FunStart));
+                    stepsQueue.Add(new EnvironmentStep(simulationTime + movementTime + recreativeTime, agentID, Effects.FunFinish));
+                    break;
+                case Actions.Work:
+                    stepsQueue.Add(new EnvironmentStep(simulationTime, agentID, Effects.StartChangePositionToWorkshop));
                     stepsQueue.Add(new EnvironmentStep(simulationTime + movementTime, agentID, Effects.ChangePositionToWorkshop));
-                    stepsQueue.Add(new EnvironmentStep(simulationTime + movementTime + recreativeTime, agentID, Effects.RecreativeFinish));
+                    stepsQueue.Add(new EnvironmentStep(simulationTime + movementTime, agentID, Effects.WorkStart));
+                    stepsQueue.Add(new EnvironmentStep(simulationTime + movementTime + workTime, agentID, Effects.WorkFinish));
+                    break;
+                case Actions.Sleep:
+                    stepsQueue.Add(new EnvironmentStep(simulationTime, agentID, Effects.StartChangePositionToHouse));
+                    stepsQueue.Add(new EnvironmentStep(simulationTime + movementTime, agentID, Effects.ChangePositionToHouse));
+                    stepsQueue.Add(new EnvironmentStep(simulationTime + movementTime, agentID, Effects.SleepStart));
+                    stepsQueue.Add(new EnvironmentStep(simulationTime + movementTime + sleepTime, agentID, Effects.SleepFinish));
                     break;
                 default:
                     break;
@@ -355,9 +407,13 @@ namespace Simulation
                 case Actions.Plant:
                     return AgentPosition.Farm;
                 case Actions.Recreative:
-                    return AgentPosition.WorkShop;
+                    return AgentPosition.House;
                 case Actions.Eat:
                     return agentCurrentPos;
+                case Actions.Work:
+                    return AgentPosition.WorkShop;
+                case Actions.Sleep:
+                    return AgentPosition.House;
 
             }
             return agentCurrentPos;
@@ -460,7 +516,15 @@ namespace Simulation
         {
             for (int i = 0; i < farm.Length; i++)
             {
-                if(farm[i] == CropState.None)
+                bool isSpotFree = true;
+                for(int j = 0; j < ownedHarvest.Count; j++)
+                {
+                    if (ownedHarvest[j].Contains(i))
+                    {
+                        isSpotFree = false;
+                    }
+                }
+                if(isSpotFree)
                 {
                     return i;
                 }
@@ -496,7 +560,7 @@ namespace Simulation
             EnvironmentStep envStep = stepsQueue.First();
             simulationTime = envStep.getTimeStamp();
             int agentID = envStep.getAgentID();
-
+            outputLogger.writeOutput(envStep, agentFoodReserved[agentID], agentSaturation[agentID]);
             //update do estado do jogo
             if (!updateAgentSaturation(agentID, simulationTime - agentLastUpdateTimeStamp[agentID]))
             {
@@ -524,6 +588,7 @@ namespace Simulation
                 {
                     farm[plantID] = CropState.None;
                 }
+                ownedHarvest[agentID] = new List<int>();
                 return;
             }
             
@@ -531,9 +596,8 @@ namespace Simulation
 
             switch (envStep.getEffect())
             {
-                case Effects.FoodConsumption:
+                case Effects.FoodConsumptionEnd:
                     consumeFood(agentID);
-                        
                     //Console.WriteLine("agent ate");
                     break;
                 case Effects.ChangePositionToFarm:
@@ -544,8 +608,12 @@ namespace Simulation
                     updateAgentPosition(agentID, AgentPosition.WorkShop);
                     //Console.WriteLine("agent went to workshop");
                     break;
+                case Effects.ChangePositionToHouse:
+                    updateAgentPosition(agentID, AgentPosition.House);
+                    //Console.WriteLine("agent went to workshop");
+                    break;
                 case Effects.PlantGrow:
-                    farm[agentID] = CropState.Plant;
+                    farm[envStep.getPlantID()] = CropState.Plant;
                     //Console.WriteLine("plant grows");
                     break;
                 case Effects.PlantHarvest:
@@ -553,11 +621,21 @@ namespace Simulation
                     addFoodToAgent(agentID);
                     //Console.WriteLine("plant is harvested");
                     break;
-                case Effects.RecreativeFinish:
-                    endRecreative(agentID);
+                case Effects.FunFinish:
+                    endFun(agentID);
+                    break;
+                case Effects.WorkFinish:
+                    endWork(agentID);
+                    break;
+                case Effects.SleepFinish:
+                    endSleep(agentID);
                     break;
                 case Effects.PlantSeed:
                     plantCrop(agentID, envStep.getPlantID());
+                    //Console.WriteLine("seed is planted");
+                    break;
+                case Effects.PlantStart:
+                    //plantCrop(agentID, envStep.getPlantID());
                     //Console.WriteLine("seed is planted");
                     break;
                 default:
@@ -662,14 +740,25 @@ namespace Simulation
         private void plantCrop(int agentID, int plantID)
         {
             farm[plantID] = CropState.Seed;
-            ownedHarvest[agentID].Add(plantID);
+            //ownedHarvest[agentID].Add(plantID);
             updateAgentReward(agentID, setupVariables.rewardPlant);
         }
 
-        private void endRecreative(int agentID)
+        private void endWork(int agentID)
         {
             updateAgentReward(agentID, setupVariables.rewardWorkShop);
         }
+
+        private void endFun(int agentID)
+        {
+            updateAgentReward(agentID, setupVariables.rewardFun);
+        }
+
+        private void endSleep(int agentID)
+        {
+            updateAgentReward(agentID, setupVariables.rewardSleep);
+        }
+
 
         //updates agent saturation, returns true if the agent is not dead, and false if he is
         private bool updateAgentSaturation(int agentID, double timePassed)
@@ -684,6 +773,10 @@ namespace Simulation
 
         private void updateAgentReward(int agentID, double reward)
         {
+            if(socialPracticesFlag[agentID])
+            {
+                reward = 0;
+            }
             if(cooperativeLearning)
             {
                 coopAgents.updateReward(agentID, reward);
@@ -692,6 +785,90 @@ namespace Simulation
                 agents[agentID].updateReward(reward);
             }
             metricsLogger.addRewardToMetrics(agentID, reward);
+        }
+    
+        private int getDayTime()
+        {
+            return (int)Math.Floor((simulationTime % (24 * 4)) / 4);
+        }
+    
+
+        private Actions socialPractices(int agentID, Actions actionChosen)
+        {
+            if(agentSaturation[agentID] <= 4) //confirm agent doesn't die
+            {
+                if (agentFoodReserved[agentID] > 0)
+                {
+                    socialPracticesFlag[agentID] = true;
+                    return Actions.Eat;
+                }
+            }
+            if (agents[agentID].doesSocialPractice(SocialPractices.Sleep)) //sleep from 10pm to 8am
+            {
+                int dayTime = getDayTime();
+                if(dayTime >= 22 || dayTime <= 8)
+                {
+                    socialPracticesFlag[agentID] = true;
+                    return Actions.Sleep;
+                }
+            }
+            if (agents[agentID].doesSocialPractice(SocialPractices.LimitFarm)) //sleep from 10pm to 8am
+            {
+                if (actionChosen == Actions.Plant && ownedHarvest[agentID].Count >= 5)
+                {
+                    socialPracticesFlag[agentID] = true;
+                    if (getPlantToHarvest(agentID) != -1)
+                    {
+                        return Actions.Harvest;
+                    }
+                    return Actions.Work;
+                }
+            }
+            if (agents[agentID].doesSocialPractice(SocialPractices.EatTime)) // Eats between 12am and 2pm and 8pm to 10pm until a certain saturation is achieved
+            {
+                int dayTime = getDayTime();
+                if (((dayTime >= 12 && dayTime <= 14) || (dayTime >= 20 && dayTime <= 22)) && agentSaturation[agentID] <= 30 && agentFoodReserved[agentID] >= 1)
+                {
+                    socialPracticesFlag[agentID] = true;
+                    return Actions.Eat;
+                }
+            }
+            if (agents[agentID].doesSocialPractice(SocialPractices.EatQuantity))// Cannot eat if a certain saturation threshold is achieved
+            {
+                if (agentSaturation[agentID] > 30 && actionChosen == Actions.Eat)
+                {
+                    socialPracticesFlag[agentID] = true;
+                    return Actions.Work;
+                }
+            }
+            if (agents[agentID].doesSocialPractice(SocialPractices.Schedule)) // can only work from 8am to 4pm, can only have fun from 4pm to 8pm
+            {
+                int dayTime = getDayTime();
+                if (dayTime >= 8 && dayTime <= 16) //work
+                {
+                    socialPracticesFlag[agentID] = true;
+                    Console.WriteLine(farm[1].ToString());
+                    if(getPlantToHarvest(agentID) != -1)
+                    {
+                        return Actions.Harvest;
+                    }
+                    if(agentFoodReserved[agentID] < 14 && getFreeSpaceInFarm() != -1 && ownedHarvest[agentID].Count <= 4)
+                    {
+                        return Actions.Plant;
+                    }
+                    return Actions.Work;
+
+                }
+                if (dayTime >= 16 || dayTime <= 20) //have fun
+                {
+                    socialPracticesFlag[agentID] = true;
+                    return Actions.Recreative;
+                }
+
+            }
+            
+
+            return actionChosen;
         }
     }
 

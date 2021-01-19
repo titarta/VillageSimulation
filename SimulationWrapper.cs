@@ -18,6 +18,7 @@ namespace Simulation
         private SetupConfig variablesSetup;
         private TabularStateConfig tabStateConfig;
         private MetricsLogger metricsLogger;
+        private OutputLogger outputLogger;
         private bool cooperativeLearning;
         private bool saveAgents;
         private string agentNames;
@@ -30,10 +31,31 @@ namespace Simulation
             variablesSetup = new SetupConfig(definitionsPath);
             tabStateConfig = new TabularStateConfig();
             metricsLogger = new MetricsLogger(metricsFileName, variablesSetup.numberAgents);
+            if (singleOrMultiple == "single")
+            {
+                outputLogger = new RealOutputLogger(outputFileName);
+            }
+            else
+            {
+                outputLogger = new FakeOutputLogger(outputFileName);
+            }
             agents = new Dictionary<int, Agent>();
             cooperativeLearning = coopLearning;
             this.saveAgents = saveAgents;
-            if(cooperativeLearning)
+            List<SocialPractices> agent0sp = new List<SocialPractices>() { SocialPractices.LimitFarm };
+            List<SocialPractices> agent1sp = new List<SocialPractices>() { SocialPractices.LimitFarm, SocialPractices.Schedule };
+            List<SocialPractices> agent2sp = new List<SocialPractices>() { SocialPractices.LimitFarm, SocialPractices.Schedule, SocialPractices.Sleep };
+            //List<SocialPractices> agent0sp = new List<SocialPractices>() { SocialPractices.LimitFarm, SocialPractices.Schedule, SocialPractices.Sleep, SocialPractices.EatQuantity, SocialPractices.EatTime };
+            //List<SocialPractices> agent1sp = new List<SocialPractices>() { SocialPractices.LimitFarm, SocialPractices.Schedule, SocialPractices.Sleep, SocialPractices.EatQuantity, SocialPractices.EatTime };
+            //List<SocialPractices> agent2sp = new List<SocialPractices>() { SocialPractices.LimitFarm, SocialPractices.Schedule, SocialPractices.Sleep, SocialPractices.EatQuantity, SocialPractices.EatTime };
+            List<SocialPractices> agent3sp = new List<SocialPractices>() { SocialPractices.LimitFarm, SocialPractices.Schedule, SocialPractices.Sleep, SocialPractices.EatQuantity, SocialPractices.EatTime };
+            Dictionary<int, List<SocialPractices>> sps = new Dictionary<int, List<SocialPractices>>();
+            sps.Add(0, agent0sp);
+            sps.Add(1, agent1sp);
+            sps.Add(2, agent2sp);
+            sps.Add(3, agent3sp);
+
+            if (cooperativeLearning)
             {
                 switch (variablesSetup.learningAlgorithm)
                 {
@@ -78,7 +100,7 @@ namespace Simulation
                             }
 
 
-                            agents.Add(i, new QLearningAgent(tabStateConfig.getStateSize(), expPolicy, false, tabStateConfig, metricsLogger));
+                            agents.Add(i, new QLearningAgent(tabStateConfig.getStateSize(), expPolicy, false, tabStateConfig, metricsLogger, sps[i]));
                             break;
                         case "deepQ-Learning":
                             addDeepQlearningAgents(i);
@@ -92,6 +114,7 @@ namespace Simulation
             {
                 SimulationWrapperSingle();
                 metricsLogger.closeFile();
+                outputLogger.closeFile();
             } else
             {
                 Thread t1 = new Thread(SimulationWrapperMultiple);
@@ -107,15 +130,23 @@ namespace Simulation
             variablesSetup = new SetupConfig(definitionsPath);
             tabStateConfig = new TabularStateConfig();
             metricsLogger = new MetricsLogger(metricsFileName, variablesSetup.numberAgents);
+            if(singleOrMultiple == "single")
+            {
+                outputLogger = new RealOutputLogger(outputFileName);
+            } else
+            {
+                outputLogger = new FakeOutputLogger(outputFileName);
+            }
+            
             this.agents = new Dictionary<int, Agent>();
             cooperativeLearning = true;
             this.saveAgents = saveAgents;
             coopAgent = agents;
-
             if (singleOrMultiple == "single")
             {
                 SimulationWrapperSingle();
                 metricsLogger.closeFile();
+                outputLogger.closeFile();
             }
             else
             {
@@ -132,15 +163,25 @@ namespace Simulation
             variablesSetup = new SetupConfig(definitionsPath);
             tabStateConfig = new TabularStateConfig();
             metricsLogger = new MetricsLogger(metricsFileName, variablesSetup.numberAgents);
+            if (singleOrMultiple == "single")
+            {
+                outputLogger = new RealOutputLogger(outputFileName);
+            }
+            else
+            {
+                outputLogger = new FakeOutputLogger(outputFileName);
+            }
             this.agents = agents;
             cooperativeLearning = false;
             this.saveAgents = saveAgents;
             coopAgent = new QLearningCooperative(0, 0, null, null, null);
 
+            
             if (singleOrMultiple == "single")
             {
                 SimulationWrapperSingle();
                 metricsLogger.closeFile();
+                outputLogger.closeFile();
             }
             else
             {
@@ -156,10 +197,10 @@ namespace Simulation
         {
             if(cooperativeLearning)
             {
-                Environment env = new Environment(variablesSetup.numberCrops, coopAgent, variablesSetup, metricsLogger);
+                Environment env = new Environment(variablesSetup.numberCrops, coopAgent, variablesSetup, metricsLogger, outputLogger);
             } else
             {
-                Environment env = new Environment(variablesSetup.numberCrops, agents, variablesSetup, metricsLogger);
+                Environment env = new Environment(variablesSetup.numberCrops, agents, variablesSetup, metricsLogger, outputLogger);
             }
            
         }
@@ -171,10 +212,10 @@ namespace Simulation
             while(!endingCondition) {
                 if(cooperativeLearning)
                 {
-                    Environment env = new Environment(variablesSetup.numberCrops, coopAgent, variablesSetup, metricsLogger);
+                    Environment env = new Environment(variablesSetup.numberCrops, coopAgent, variablesSetup, metricsLogger, outputLogger);
                 } else
                 {
-                    Environment env = new Environment(variablesSetup.numberCrops, agents, variablesSetup, metricsLogger);
+                    Environment env = new Environment(variablesSetup.numberCrops, agents, variablesSetup, metricsLogger, outputLogger);
                 }
                 i++;
                 Console.WriteLine("Simulation ended");

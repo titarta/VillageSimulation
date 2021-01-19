@@ -10,6 +10,7 @@ namespace Simulation
     [Serializable]
     class MetricsLogger
     {
+        
         private StreamWriter logFile;
         private int agentNumbers = 0;
         private int simulationNumber;
@@ -110,6 +111,8 @@ namespace Simulation
             logFile.WriteLine("Harvest Average percentage: " + (double)actionsPerformedCounter.Values.Sum(x => (double)x[Actions.Harvest] / (double)x.Values.Sum()) / (double)actionsPerformedCounter.Count);
             logFile.WriteLine("Plant Average percentage: " + (double)actionsPerformedCounter.Values.Sum(x => (double)x[Actions.Plant] / (double)x.Values.Sum()) / (double)actionsPerformedCounter.Count);
             logFile.WriteLine("Recreative Average percentage: " + (double)actionsPerformedCounter.Values.Sum(x => (double)x[Actions.Recreative] / (double)x.Values.Sum()) / (double)actionsPerformedCounter.Count);
+            logFile.WriteLine("Sleep Average percentage: " + (double)actionsPerformedCounter.Values.Sum(x => (double)x[Actions.Sleep] / (double)x.Values.Sum()) / (double)actionsPerformedCounter.Count);
+            logFile.WriteLine("Work Average percentage: " + (double)actionsPerformedCounter.Values.Sum(x => (double)x[Actions.Work] / (double)x.Values.Sum()) / (double)actionsPerformedCounter.Count);
             for (int i = 0; i < agentNumbers; i++)
             {
                 logFile.WriteLine("------- Agent " + i + " metrics -------");
@@ -125,6 +128,8 @@ namespace Simulation
                 logFile.WriteLine("Agent harvest Average percentage: " + (double)actionsPerformedCounter[i][Actions.Harvest] / (double)actionsPerformedCounter[i].Values.Sum());
                 logFile.WriteLine("Agent plant Average percentage: " + (double)actionsPerformedCounter[i][Actions.Plant] / (double)actionsPerformedCounter[i].Values.Sum());
                 logFile.WriteLine("Agent recreative Average percentage: " + (double)actionsPerformedCounter[i][Actions.Recreative] / (double)actionsPerformedCounter[i].Values.Sum());
+                logFile.WriteLine("Agent sleep Average percentage: " + (double)actionsPerformedCounter[i][Actions.Sleep] / (double)actionsPerformedCounter[i].Values.Sum());
+                logFile.WriteLine("Agent work Average percentage: " + (double)actionsPerformedCounter[i][Actions.Work] / (double)actionsPerformedCounter[i].Values.Sum());
             }
         }
 
@@ -134,4 +139,62 @@ namespace Simulation
             logFile.Close();
         }
     }
+
+    abstract class OutputLogger
+    {
+
+        public OutputLogger()
+        {
+        }
+
+        public abstract void writeOutput(EnvironmentStep envStep, int agentStock, double agentSaturation);
+
+        public abstract void closeFile();
+    }
+
+    class RealOutputLogger : OutputLogger
+    {
+        private StreamWriter logFile;
+
+        public RealOutputLogger(string filename)
+        {
+            string filePath = @"C:\Users\trvca\Desktop\VillageSimulation\Outputs\Output\Output-" + filename + "-" + DateTime.Now.ToString("h-mm-ss");
+            logFile = File.CreateText(filePath);
+        }
+
+        public override void writeOutput(EnvironmentStep envStep, int agentStock, double agentSaturation)
+        {
+            if (envStep.getEffect() == Effects.PlantGrow || envStep.getEffect() == Effects.PlantHarvest || envStep.getEffect() == Effects.PlantSeed)
+            {
+                logFile.WriteLine(envStep.getEffect().ToString() + "," + envStep.getTimeStamp() + "," + envStep.getAgentID() + "," + agentStock + "," + agentSaturation + "," + envStep.getPlantID());
+            }
+            else
+            {
+                logFile.WriteLine(envStep.getEffect().ToString() + "," + envStep.getTimeStamp() + "," + envStep.getAgentID() + "," + agentStock + "," + agentSaturation);
+            }
+        }
+
+        public override void closeFile()
+        {
+            logFile.Close();
+        }
+    }
+
+    class FakeOutputLogger : OutputLogger
+    {
+
+        public FakeOutputLogger(string filename)
+        {
+        }
+
+        public override void writeOutput(EnvironmentStep envStep, int agentStock, double agentSaturation)
+        {
+        }
+
+        public override void closeFile()
+        {
+
+        }
+    }
+
 }

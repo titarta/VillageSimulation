@@ -8,7 +8,7 @@ using System.Threading.Tasks;
 namespace Simulation
 {
     [Serializable]
-    public enum AgentPosition { Center=0, Farm=1, WorkShop=2}
+    public enum AgentPosition { Center=0, Farm=1, WorkShop=2, House=3}
     [Serializable]
     abstract class Agent
     {
@@ -27,6 +27,8 @@ namespace Simulation
 
         public abstract void updateReward(double reward);
 
+        public abstract bool doesSocialPractice(SocialPractices sp);
+
         
     }
 
@@ -43,6 +45,11 @@ namespace Simulation
         public override Actions decide(EnvironmentState newState)
         {
             return (Actions) r.Next(Actions.GetNames(typeof(Actions)).Length);
+        }
+
+        public override bool doesSocialPractice(SocialPractices sp)
+        {
+            throw new NotImplementedException();
         }
 
         public override void updateReward(double reward)
@@ -77,11 +84,14 @@ namespace Simulation
 
         private MetricsLogger metricsLogger;
 
-        public QLearningAgent(int statesNumber, ExplorationPolicy explorationPolicy, bool randomizeQvalues, TabularStateConfig configuration, MetricsLogger metricsLogger)
+        private List<SocialPractices> sp;
+
+        public QLearningAgent(int statesNumber, ExplorationPolicy explorationPolicy, bool randomizeQvalues, TabularStateConfig configuration, MetricsLogger metricsLogger, List<SocialPractices> sp)
         {
             stateReward = 0;
             stateAction = 0;
             actions = 4;
+            this.sp = sp;
             this.metricsLogger = metricsLogger;
             states = statesNumber;
             this.explorationPolicy = explorationPolicy;
@@ -147,6 +157,11 @@ namespace Simulation
         public override void updateReward(double reward)
         {
             stateReward += reward;
+        }
+
+        public override bool doesSocialPractice(SocialPractices sp)
+        {
+            return this.sp.Contains(sp);
         }
 
     }
@@ -538,6 +553,10 @@ namespace Simulation
 
         //    return t;
         //}
+        public override bool doesSocialPractice(SocialPractices sp)
+        {
+            throw new NotImplementedException();
+        }
 
     }
 

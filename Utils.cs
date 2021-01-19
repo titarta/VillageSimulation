@@ -19,6 +19,8 @@ namespace Simulation
         public int rewardHarvest;
         public int rewardDying;
         public int rewardImpossibleAction;
+        public int rewardSleep;
+        public int rewardFun;
         //Agents
         public int initialSaturation;
         public double saturationLostPerTime;
@@ -82,6 +84,12 @@ namespace Simulation
                         break;
                     case "Reward Impossible Action":
                         rewardImpossibleAction = Int32.Parse(lineSplitted[1]);
+                        break;
+                    case "Reward Sleeping":
+                        rewardSleep = Int32.Parse(lineSplitted[1]);
+                        break;
+                    case "Reward Fun":
+                        rewardFun = Int32.Parse(lineSplitted[1]);
                         break;
 
                     //agent
