@@ -29,6 +29,7 @@ namespace Simulation
         public string learningAlgorithm;
         public string explorationPolicy;
         public double eDecay;
+        public double eMin;
 
         public SetupConfig(string filePath)
         {
@@ -110,6 +111,9 @@ namespace Simulation
                         break;
                     case "Edecay":
                         eDecay = Double.Parse(lineSplitted[1]);
+                        break;
+                    case "Emin":
+                        eMin = Double.Parse(lineSplitted[1]);
                         break;
                 }
             }

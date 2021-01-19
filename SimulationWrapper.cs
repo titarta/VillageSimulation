@@ -47,7 +47,7 @@ namespace Simulation
                                 expPolicy = new GreedyExploration();
                                 break;
                             case "Egreedy":
-                                expPolicy = new EGreedyExploration(variablesSetup.eDecay);
+                                expPolicy = new EGreedyExploration(variablesSetup.eDecay, variablesSetup.eMin);
                                 break;
                         }
 
@@ -73,7 +73,7 @@ namespace Simulation
                                     expPolicy = new GreedyExploration();
                                     break;
                                 case "Egreedy":
-                                    expPolicy = new EGreedyExploration(variablesSetup.eDecay);
+                                    expPolicy = new EGreedyExploration(variablesSetup.eDecay, variablesSetup.eMin);
                                     break;
                             }
 

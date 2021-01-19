@@ -123,7 +123,7 @@ namespace Simulation
         private double timeToGrow = 20;
         private double harvestTime = 0;
         private double plantTime = 0;
-        private double recreativeTime = 10;
+        private double recreativeTime = 5;
 
         private bool cooperativeLearning;
 
@@ -221,6 +221,16 @@ namespace Simulation
                 }
                 if (allAgentsDead || simulationTime >= 100000)
                 {
+                    if(simulationTime >= 100000)
+                    {
+                        for(int i = 0; i < deadAgents.Count; i++)
+                        {
+                            if(!deadAgents[i])
+                            {
+                                metricsLogger.addAgentDeath(i, 100000);
+                            }
+                        }
+                    }
                     condition = false;
                     continue;
                 }
@@ -326,6 +336,7 @@ namespace Simulation
                         updateAgentReward(agentID, setupVariables.rewardImpossibleAction);
                         return false;
                     }
+                    ownedHarvest[agentID].Add(plantPosition);
                     stepsQueue.Add(new EnvironmentStep(simulationTime + movementTime, agentID, Effects.ChangePositionToFarm));
                     stepsQueue.Add(new EnvironmentStep(simulationTime + movementTime + plantTime, agentID, Effects.PlantSeed, plantPosition));
                     stepsQueue.Add(new EnvironmentStep(simulationTime + movementTime + plantTime + timeToGrow, agentID, Effects.PlantGrow, plantPosition));
@@ -460,25 +471,58 @@ namespace Simulation
         {
             for (int i = 0; i < farm.Length; i++)
             {
-                if(farm[i] == CropState.None)
+                bool isSpotFree = true;
+                for (int j = 0; j < ownedHarvest.Count; j++)
+                {
+                    if (ownedHarvest[j].Contains(i))
+                    {
+                        isSpotFree = false;
+                    }
+                }
+                if (isSpotFree)
                 {
                     return i;
                 }
             }
             return -1;
+            //for (int i = 0; i < farm.Length; i++)
+            //{
+            //    if(farm[i] == CropState.None)
+            //    {
+            //        return i;
+            //    }
+            //}
+            //return -1;
         }
 
         private int getNumberOfFreeCrops()
         {
             int nCrops = 0;
+
             for (int i = 0; i < farm.Length; i++)
             {
-                if (farm[i] == CropState.None)
+                bool isSpotFree = true;
+                for (int j = 0; j < ownedHarvest.Count; j++)
+                {
+                    if (ownedHarvest[j].Contains(i))
+                    {
+                        isSpotFree = false;
+                    }
+                }
+                if (isSpotFree)
                 {
                     nCrops++;
                 }
             }
             return nCrops;
+            //for (int i = 0; i < farm.Length; i++)
+            //{
+            //    if (farm[i] == CropState.None)
+            //    {
+            //        nCrops++;
+            //    }
+            //}
+            //return nCrops;
         }
 
 
@@ -545,7 +589,7 @@ namespace Simulation
                     //Console.WriteLine("agent went to workshop");
                     break;
                 case Effects.PlantGrow:
-                    farm[agentID] = CropState.Plant;
+                    farm[envStep.getPlantID()] = CropState.Plant;
                     //Console.WriteLine("plant grows");
                     break;
                 case Effects.PlantHarvest:
@@ -662,7 +706,7 @@ namespace Simulation
         private void plantCrop(int agentID, int plantID)
         {
             farm[plantID] = CropState.Seed;
-            ownedHarvest[agentID].Add(plantID);
+            //ownedHarvest[agentID].Add(plantID);
             updateAgentReward(agentID, setupVariables.rewardPlant);
         }
 

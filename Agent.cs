@@ -139,8 +139,8 @@ namespace Simulation
             int newIntState = qLearningStateConf.GetTabularStateFromEnvState(newState).getIntState(); //codes the state into an unique integer
             Actions chosenAction = explorationPolicy.decideAction(qvalues[newIntState]);
             updateState(currentState, newIntState);
-            stateAction = (int)chosenAction;
             currentState = newIntState;
+            stateAction = (int)chosenAction;
             return chosenAction;
         }
 

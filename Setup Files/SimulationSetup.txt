@@ -1,14 +1,14 @@
 #Environment
 Number Agents:4
 Number Crops:20
-Distance Farm-Workshop:10
+Distance Farm-Workshop:2
 #Rewards
 Reward WorkShop:5
-Reward Eating:8;6;4;2
-Reward Plant:2
+Reward Eating:6;5;3;2
+Reward Plant:1
 Reward Harvest:1
-Reward Dying:-100
-Reward Impossible Action:-100
+Reward Dying:-1000
+Reward Impossible Action:-500
 #Agents
 Initial Saturation:10
 Saturation Lost Per Time:0.2
@@ -19,4 +19,5 @@ Initial Reserved Food:5
 Learning Algorithm:Q-Learning
 Exploration Policy:Egreedy
 Edecay:0.000001
-Discount Factor:0.5
+Discount Factor:0.98
+Emin:0.00

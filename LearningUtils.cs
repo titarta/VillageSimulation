@@ -95,9 +95,9 @@ namespace Simulation
 
         public TabularStateConfig()
         {
-            freecropsLimits = new int[]{ 0, 2, int.MaxValue};
-            cropsToCultivateLimits = new int[] { 0, 1, int.MaxValue };
-            cropsGrowingLimits = new int[] { 0, 1, int.MaxValue };
+            freecropsLimits = new int[]{ 0, 4, int.MaxValue};
+            cropsToCultivateLimits = new int[] { 0, 2, int.MaxValue };
+            cropsGrowingLimits = new int[] { 0, 2, int.MaxValue };
             saturationLimits = new double[] { 2, 4, 10, double.MaxValue };
             foodReservedLimits = new int[] { 0, 1, int.MaxValue };
         }
@@ -232,11 +232,13 @@ namespace Simulation
     {
         private double epsilon;
         private double epsilonDecay;
+        private double epsilonMin;
         private Random rd;
 
-        public EGreedyExploration(double epsilonDecay)
+        public EGreedyExploration(double epsilonDecay, double epsilonMin)
         {
             this.epsilonDecay = epsilonDecay;
+            this.epsilonMin = epsilonMin;
             epsilon = 1;
             rd = new Random((int)DateTime.Now.Ticks);
         }
@@ -255,11 +257,11 @@ namespace Simulation
                         maxQvalueAction = (Actions)i;
                     }
                 }
-                epsilon = Math.Max(0, epsilon - epsilonDecay);
+                epsilon = Math.Max(epsilonMin, epsilon - epsilonDecay);
                 return maxQvalueAction;
             } else
             {
-                epsilon = Math.Max(0, epsilon - epsilonDecay);
+                epsilon = Math.Max(epsilonMin, epsilon - epsilonDecay);
                 return (Actions)rd.Next(stateQvalues.Length);
             }
 

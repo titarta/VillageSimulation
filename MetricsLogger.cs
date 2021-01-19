@@ -11,6 +11,10 @@ namespace Simulation
     class MetricsLogger
     {
         private StreamWriter logFile;
+        private StreamWriter averageRewardLogFile;
+        private StreamWriter totalRewardLogFile;
+        private StreamWriter lifeTimeLogFile;
+        private StreamWriter actionsStdLogFile;
         private int agentNumbers = 0;
         private int simulationNumber;
         //death stamps by agent
@@ -25,17 +29,21 @@ namespace Simulation
         private Dictionary<int, List<double>> rewards;
         public MetricsLogger(string filename, int agentNumber)
         {
-            string filePath = @"C:\Users\trvca\Desktop\VillageSimulation\Outputs\Metrics\Metrics-" + filename + "-" + DateTime.Now.ToString("h-mm-ss");
+            string filePath = @"C:\Users\trvca\Desktop\VillageSimulation\Outputs\Metrics\Metrics-" + filename + "-" + DateTime.Now.ToString("h-mm-ss") + ".csv";
+            string averageRewardFilePath = @"C:\Users\trvca\Desktop\VillageSimulation\Outputs\Results\AverageReward-" + filename + "-" + DateTime.Now.ToString("h-mm-ss") + ".csv";
+            string totalRewardFilePath = @"C:\Users\trvca\Desktop\VillageSimulation\Outputs\Results\TotalReward-" + filename + "-" + DateTime.Now.ToString("h-mm-ss") + ".csv";
+            string lifeTimeFilePath = @"C:\Users\trvca\Desktop\VillageSimulation\Outputs\Results\LifeTime-" + filename + "-" + DateTime.Now.ToString("h-mm-ss") + ".csv";
+            string actionsStdFilePath = @"C:\Users\trvca\Desktop\VillageSimulation\Outputs\Results\Actions-" + filename + "-" + DateTime.Now.ToString("h-mm-ss") + ".csv";
             simulationNumber = 0;
             this.agentNumbers = agentNumber;
             resetMetrics();
             logFile = File.CreateText(filePath);
+            averageRewardLogFile = File.CreateText(averageRewardFilePath);
+            totalRewardLogFile = File.CreateText(totalRewardFilePath);
+            lifeTimeLogFile = File.CreateText(lifeTimeFilePath);
+            actionsStdLogFile = File.CreateText(actionsStdFilePath);
         }
 
-        public void logAgentDeath(int agentID, double timeStamp)
-        {
-            logFile.WriteLine("Agent death: " + agentID + ";" + timeStamp);
-        }
 
         public void startSimulationMetrics()
         {
@@ -126,12 +134,44 @@ namespace Simulation
                 logFile.WriteLine("Agent plant Average percentage: " + (double)actionsPerformedCounter[i][Actions.Plant] / (double)actionsPerformedCounter[i].Values.Sum());
                 logFile.WriteLine("Agent recreative Average percentage: " + (double)actionsPerformedCounter[i][Actions.Recreative] / (double)actionsPerformedCounter[i].Values.Sum());
             }
+
+            averageRewardLogFile.WriteLine(rewards.Values.Sum(x => x.Sum() / x.Count) / rewards.Count);
+            totalRewardLogFile.WriteLine(rewards.Values.Sum(x => x.Sum()) / rewards.Count);
+            lifeTimeLogFile.WriteLine(deathTimeStamps.Values.Sum() / deathTimeStamps.Count);
+
+
+            double plantStd = 0;
+            double harvestStd = 0;
+            double eatStd = 0;
+            double workStd = 0;
+            double plantSum = (double)actionsPerformedCounter.Values.Sum(x => (double)x[Actions.Plant] / (double)x.Values.Sum()) / (double)actionsPerformedCounter.Count;
+            double harvestSum = (double)actionsPerformedCounter.Values.Sum(x => (double)x[Actions.Harvest] / (double)x.Values.Sum()) / (double)actionsPerformedCounter.Count;
+            double eatSum = (double)actionsPerformedCounter.Values.Sum(x => (double)x[Actions.Eat] / (double)x.Values.Sum()) / (double)actionsPerformedCounter.Count;
+            double workSum = (double)actionsPerformedCounter.Values.Sum(x => (double)x[Actions.Recreative] / (double)x.Values.Sum()) / (double)actionsPerformedCounter.Count;
+            for (int i = 0; i < agentNumbers; i++)
+            {
+                plantStd += Math.Pow(plantSum - (double)actionsPerformedCounter[i][Actions.Plant] / (double)actionsPerformedCounter[i].Values.Sum(), 2);
+                harvestStd += Math.Pow(harvestSum - (double)actionsPerformedCounter[i][Actions.Harvest] / (double)actionsPerformedCounter[i].Values.Sum(), 2);
+                workStd += Math.Pow(workSum - (double)actionsPerformedCounter[i][Actions.Recreative] / (double)actionsPerformedCounter[i].Values.Sum(), 2);
+                eatStd += Math.Pow(eatSum - (double)actionsPerformedCounter[i][Actions.Eat] / (double)actionsPerformedCounter[i].Values.Sum(), 2);
+            }
+            plantStd = Math.Sqrt(plantStd / agentNumbers);
+            harvestStd = Math.Sqrt(harvestStd / agentNumbers);
+            eatStd = Math.Sqrt(eatStd / agentNumbers);
+            workStd = Math.Sqrt(workStd / agentNumbers);
+            actionsStdLogFile.WriteLine(eatStd + "," + harvestStd + "," + plantStd + "," + workStd);
+
         }
 
 
         public void closeFile()
         {
             logFile.Close();
+            averageRewardLogFile.Close();
+            totalRewardLogFile.Close();
+            lifeTimeLogFile.Close();
+            actionsStdLogFile.Close();
+
         }
     }
 }
